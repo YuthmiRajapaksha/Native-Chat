@@ -10,7 +10,15 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#ffffff",
+       "plugins": [
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Allow app to access your contacts."
+        }
+      ]
+    ]
     },
     "ios": {
       "supportsTablet": true
