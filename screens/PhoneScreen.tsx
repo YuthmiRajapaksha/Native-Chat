@@ -11,6 +11,9 @@ import {
   FlatList,
   SafeAreaView,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
 } from "react-native";
 
 import rawCountries from "world-countries";
@@ -21,6 +24,11 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { useThemeContext } from "../theme/ThemeContext";
 
+import {
+  lightColors,
+  darkColors,
+} from "../src/colors";
+
 type Country = {
   name: string;
   code: string;
@@ -28,66 +36,114 @@ type Country = {
   flag: string;
 };
 
-const COUNTRIES: Country[] = rawCountries
-  .filter(
-    (c) => c.idd?.root && c.idd?.suffixes?.length >= 1
-  )
-  .map((c) => ({
-    name: c.name.common,
-    code: c.cca2,
-    callingCode: `${c.idd.root}${c.idd.suffixes![0]}`.replace(
-      /\+/g,
-      ""
-    ),
-    flag: c.flag,
-  }))
-  .sort((a, b) => a.name.localeCompare(b.name));
+const COUNTRIES: Country[] =
+  rawCountries
+    .filter(
+      (c) =>
+        c.idd?.root &&
+        c.idd?.suffixes?.length >= 1
+    )
+    .map((c) => ({
+      name: c.name.common,
+      code: c.cca2,
+      callingCode: `${c.idd.root}${c.idd.suffixes![0]}`.replace(
+        /\+/g,
+        ""
+      ),
+      flag: c.flag,
+    }))
+    .sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
 
 export default function PhoneScreen() {
-  const { darkMode } = useThemeContext();
+  const { darkMode } =
+    useThemeContext();
 
-  const [phone, setPhone] = useState("");
+  const colors = darkMode
+    ? darkColors
+    : lightColors;
 
-  const [name, setName] = useState("");
+  const [phone, setPhone] =
+    useState("");
 
-  const [showNameInput, setShowNameInput] =
-    useState(false);
+  const [name, setName] =
+    useState("");
 
-  const [selected, setSelected] = useState<Country>(
-    COUNTRIES.find((c) => c.code === "US")!
-  );
+  const [showNameInput,
+    setShowNameInput,
+  ] = useState(false);
 
-  const [modalVisible, setModalVisible] =
-    useState(false);
+  const [selected, setSelected] =
+    useState<Country>(
+      COUNTRIES.find(
+        (c) => c.code === "US"
+      )!
+    );
 
-  const [search, setSearch] = useState("");
+  const [modalVisible,
+    setModalVisible,
+  ] = useState(false);
 
-  const filtered = COUNTRIES.filter((c) =>
-    c.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const [search, setSearch] =
+    useState("");
 
-  const bg = darkMode ? "#121212" : "#F2F2F2";
+  // FILTER COUNTRIES
+  const filtered =
+    COUNTRIES.filter((c) => {
+      const value =
+        search.toLowerCase();
 
-  const cardBg = darkMode ? "#1E1E1E" : "#fff";
+      return (
+        c.name
+          .toLowerCase()
+          .includes(value) ||
 
-  const textColor = darkMode ? "#fff" : "#000";
+        c.code
+          .toLowerCase()
+          .includes(value) ||
 
-  const subtitleColor = darkMode ? "#ddd" : "#555";
+        c.callingCode.includes(
+          value
+        ) ||
 
-  const modalBg = darkMode ? "#1E1E1E" : "#fff";
+        c.flag.includes(value)
+      );
+    });
 
-  const searchBg = darkMode ? "#2C2C2C" : "#F0F0F0";
-
-  const borderColor = darkMode ? "#333" : "#eee";
-
+  // SAVE CONTACT
   const saveContact = async () => {
+    const cleanedPhone =
+      phone.replace(/\s/g, "");
+
     if (!showNameInput) {
-      if (!phone) {
+      if (!cleanedPhone) {
         Alert.alert(
           "Validation",
           "Please enter phone number"
         );
+        return;
+      }
 
+      if (
+        !/^[0-9]+$/.test(
+          cleanedPhone
+        )
+      ) {
+        Alert.alert(
+          "Validation",
+          "Only numbers are allowed"
+        );
+        return;
+      }
+
+      if (
+        cleanedPhone.length !== 10
+      ) {
+        Alert.alert(
+          "Validation",
+          "Phone number must be exactly 10 digits"
+        );
         return;
       }
 
@@ -96,7 +152,7 @@ export default function PhoneScreen() {
       return;
     }
 
-    if (!name) {
+    if (!name.trim()) {
       Alert.alert(
         "Validation",
         "Please enter contact name"
@@ -106,8 +162,6 @@ export default function PhoneScreen() {
     }
 
     try {
-      
-
       const { status } =
         await Contacts.requestPermissionsAsync();
 
@@ -119,47 +173,58 @@ export default function PhoneScreen() {
         return;
       }
 
-
       await Contacts.addContactAsync({
-  firstName: name,
+        firstName: name,
 
-  phoneNumbers: [
-    {
-      number: `+${selected.callingCode}${phone}`,
-      label: "mobile",
-    },
-  ],
-} as any);
+        phoneNumbers: [
+          {
+            number: `+${selected.callingCode}${cleanedPhone}`,
 
+            label: "mobile",
+          },
+        ],
+      } as any);
 
       const newContact = {
         id: Date.now().toString(),
 
-        name: name,
+        name,
 
-        phone: `+${selected.callingCode}${phone}`,
+        phone: `+${selected.callingCode}${cleanedPhone}`,
+
+        country: selected.name,
+
+        flag: selected.flag,
+
+        time:
+          new Date().toLocaleTimeString(
+            [],
+            {
+              hour: "2-digit",
+              minute: "2-digit",
+            }
+          ),
       };
 
-      const existingContacts =
+      const existing =
         await AsyncStorage.getItem(
           "appContacts"
         );
 
-      const parsedContacts =
-        existingContacts
-          ? JSON.parse(existingContacts)
-          : [];
+      const parsed = existing
+        ? JSON.parse(existing)
+        : [];
 
-      parsedContacts.push(newContact);
+      parsed.push(newContact);
 
       await AsyncStorage.setItem(
         "appContacts",
-        JSON.stringify(parsedContacts)
+        JSON.stringify(parsed)
       );
 
       Alert.alert(
         "Success",
-        "Contact saved to device and app"
+        "Contact saved successfully"
       );
 
       setPhone("");
@@ -167,7 +232,6 @@ export default function PhoneScreen() {
       setName("");
 
       setShowNameInput(false);
-
     } catch (error) {
       Alert.alert(
         "Error",
@@ -177,276 +241,356 @@ export default function PhoneScreen() {
   };
 
   return (
-    <View
-      style={[
-        styles.container,
-        {
-          backgroundColor: bg,
-        },
-      ]}
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={
+        Platform.OS === "ios"
+          ? "padding"
+          : "height"
+      }
     >
-      <Text
-        style={[
-          styles.title,
-          {
-            color: textColor,
-          },
-        ]}
+      <ScrollView
+        contentContainerStyle={{
+          flexGrow: 1,
+        }}
+        keyboardShouldPersistTaps="handled"
       >
-        Phone number
-      </Text>
-
-      <View
-        style={[
-          styles.card,
-          {
-            backgroundColor: cardBg,
-          },
-        ]}
-      >
-        <Text
+        <View
           style={[
-            styles.subtitle,
+            styles.container,
             {
-              color: subtitleColor,
+              backgroundColor:
+                colors.background,
             },
           ]}
         >
-          Please confirm your country code
-          and enter your phone number
-        </Text>
-
-     //country code
-
-        <TouchableOpacity
-          style={[
-            styles.countryRow,
-            {
-              borderBottomColor: borderColor,
-            },
-          ]}
-          onPress={() =>
-            setModalVisible(true)
-          }
-        >
-          <Text style={styles.flag}>
-            {selected.flag}
-          </Text>
-
           <Text
             style={[
-              styles.countryName,
+              styles.title,
               {
-                color: textColor,
+                color: colors.text,
               },
             ]}
           >
-            {selected.name}
+            Phone Number 🔥
           </Text>
 
-          <Text
-            style={[
-              styles.chevron,
-              {
-                color: subtitleColor,
-              },
-            ]}
-          >
-            ›
-          </Text>
-        </TouchableOpacity>
-
-      
-
-        <View style={styles.inputRow}>
-          <Text
-            style={[
-              styles.callingCode,
-              {
-                color: textColor,
-              },
-            ]}
-          >
-            +{selected.callingCode}
-          </Text>
-
-          <TextInput
-            placeholder="Phone number"
-            placeholderTextColor="#999"
-            style={[
-              styles.input,
-              {
-                color: textColor,
-              },
-            ]}
-            keyboardType="phone-pad"
-            value={phone}
-            onChangeText={setPhone}
-          />
-        </View>
-
-
-        {showNameInput && (
-          <TextInput
-            placeholder="Enter contact name"
-            placeholderTextColor="#999"
-            value={name}
-            onChangeText={setName}
-            style={[
-              styles.nameInput,
-              {
-                color: textColor,
-                backgroundColor:
-                  searchBg,
-              },
-            ]}
-          />
-        )}
-      </View>
-
-
-      <TouchableOpacity
-        style={styles.button}
-        onPress={saveContact}
-      >
-        <Text style={styles.buttonText}>
-          {showNameInput
-            ? "Save Contact"
-            : "Continue"}
-        </Text>
-      </TouchableOpacity>
-
-
-      <Modal
-        visible={modalVisible}
-        animationType="slide"
-      >
-        <SafeAreaView
-          style={[
-            styles.modal,
-            {
-              backgroundColor: modalBg,
-            },
-          ]}
-        >
           <View
             style={[
-              styles.modalHeader,
+              styles.card,
               {
-                borderBottomColor:
-                  borderColor,
+                backgroundColor:
+                  colors.card,
               },
             ]}
           >
             <Text
               style={[
-                styles.modalTitle,
+                styles.subtitle,
                 {
-                  color: textColor,
+                  color:
+                    colors.subtitle,
                 },
               ]}
             >
-              Select Country
+              Please confirm your
+              country code and enter
+              your phone number
             </Text>
 
+            {/* COUNTRY */}
             <TouchableOpacity
-              onPress={() => {
-                setModalVisible(false);
-
-                setSearch("");
-              }}
-            >
-              <Text style={styles.closeBtn}>
-                ✕
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-     
-
-          <View
-            style={[
-              styles.searchContainer,
-              {
-                backgroundColor:
-                  searchBg,
-              },
-            ]}
-          >
-            <Text style={styles.searchIcon}>
-              🔍
-            </Text>
-
-            <TextInput
-              placeholder="Search country..."
-              placeholderTextColor="#999"
               style={[
-                styles.searchInput,
+                styles.countryRow,
                 {
-                  color: textColor,
+                  borderBottomColor:
+                    colors.border,
                 },
               ]}
-              value={search}
-              onChangeText={setSearch}
-            />
-          </View>
+              onPress={() =>
+                setModalVisible(true)
+              }
+            >
+              <Text style={styles.flag}>
+                {selected.flag}
+              </Text>
 
-         
-
-          <FlatList
-            data={filtered}
-            keyExtractor={(item) =>
-              item.code
-            }
-            renderItem={({ item }) => (
-              <TouchableOpacity
+              <Text
                 style={[
-                  styles.countryItem,
+                  styles.countryName,
                   {
-                    borderBottomColor:
-                      borderColor,
+                    color:
+                      colors.text,
                   },
                 ]}
-                onPress={() => {
-                  setSelected(item);
-
-                  setModalVisible(false);
-
-                  setSearch("");
-                }}
               >
-                <Text style={styles.itemFlag}>
-                  {item.flag}
-                </Text>
+                {selected.name}
+              </Text>
 
+              <Text
+                style={[
+                  styles.chevron,
+                  {
+                    color:
+                      colors.subtitle,
+                  },
+                ]}
+              >
+                ›
+              </Text>
+            </TouchableOpacity>
+
+            {/* PHONE */}
+            <View
+              style={styles.inputRow}
+            >
+              <Text
+                style={[
+                  styles.callingCode,
+                  {
+                    color:
+                      colors.text,
+                  },
+                ]}
+              >
+                +
+                {
+                  selected.callingCode
+                }
+              </Text>
+
+              <TextInput
+                placeholder="Phone number"
+                placeholderTextColor="#999"
+                keyboardType="number-pad"
+                value={phone}
+                onChangeText={(
+                  text
+                ) => {
+                  let cleaned =
+                    text
+                      .replace(
+                        /[^0-9]/g,
+                        ""
+                      )
+                      .slice(
+                        0,
+                        10
+                      );
+
+                  setPhone(cleaned);
+                }}
+                style={[
+                  styles.input,
+                  {
+                    color:
+                      colors.text,
+                  },
+                ]}
+              />
+            </View>
+
+            {/* NAME */}
+            {showNameInput && (
+              <TextInput
+                placeholder="Enter contact name"
+                placeholderTextColor="#999"
+                value={name}
+                onChangeText={
+                  setName
+                }
+                style={[
+                  styles.nameInput,
+                  {
+                    color:
+                      colors.text,
+
+                    backgroundColor:
+                      colors.search,
+                  },
+                ]}
+              />
+            )}
+          </View>
+
+          {/* BUTTON */}
+          <TouchableOpacity
+            style={styles.button}
+            onPress={saveContact}
+          >
+            <Text
+              style={
+                styles.buttonText
+              }
+            >
+              {showNameInput
+                ? "Save Contact"
+                : "Continue"}
+            </Text>
+          </TouchableOpacity>
+
+          {/* MODAL */}
+          <Modal
+            visible={modalVisible}
+            animationType="slide"
+          >
+            <SafeAreaView
+              style={[
+                styles.modal,
+                {
+                  backgroundColor:
+                    colors.background,
+                },
+              ]}
+            >
+              {/* HEADER */}
+              <View
+                style={[
+                  styles.modalHeader,
+                  {
+                    borderBottomColor:
+                      colors.border,
+                  },
+                ]}
+              >
                 <Text
                   style={[
-                    styles.itemName,
-                    {
-                      color: textColor,
-                    },
-                  ]}
-                >
-                  {item.name}
-                </Text>
-
-                <Text
-                  style={[
-                    styles.itemCode,
+                    styles.modalTitle,
                     {
                       color:
-                        subtitleColor,
+                        colors.text,
                     },
                   ]}
                 >
-                  +{item.callingCode}
+                  Select Country
                 </Text>
-              </TouchableOpacity>
-            )}
-          />
-        </SafeAreaView>
-      </Modal>
-    </View>
+
+                <TouchableOpacity
+                  onPress={() =>
+                    setModalVisible(
+                      false
+                    )
+                  }
+                >
+                  <Text
+                    style={
+                      styles.closeBtn
+                    }
+                  >
+                    Close
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* SEARCH */}
+              <View
+                style={[
+                  styles.searchContainer,
+                  {
+                    backgroundColor:
+                      colors.search,
+                  },
+                ]}
+              >
+                <Text
+                  style={
+                    styles.searchIcon
+                  }
+                >
+                  🔍
+                </Text>
+
+                <TextInput
+                  placeholder="Search country"
+                  placeholderTextColor="#999"
+                  value={search}
+                  onChangeText={
+                    setSearch
+                  }
+                  style={[
+                    styles.searchInput,
+                    {
+                      color:
+                        colors.text,
+                    },
+                  ]}
+                />
+              </View>
+
+              {/* COUNTRY LIST */}
+              <FlatList
+                data={filtered}
+                keyExtractor={(
+                  item
+                ) => item.code}
+                keyboardShouldPersistTaps="handled"
+                renderItem={({
+                  item,
+                }) => (
+                  <TouchableOpacity
+                    style={[
+                      styles.countryItem,
+                      {
+                        borderBottomColor:
+                          colors.border,
+                      },
+                    ]}
+                    onPress={() => {
+                      setSelected(
+                        item
+                      );
+
+                      setModalVisible(
+                        false
+                      );
+
+                      setSearch(
+                        ""
+                      );
+                    }}
+                  >
+                    <Text
+                      style={
+                        styles.itemFlag
+                      }
+                    >
+                      {item.flag}
+                    </Text>
+
+                    <Text
+                      style={[
+                        styles.itemName,
+                        {
+                          color:
+                            colors.text,
+                        },
+                      ]}
+                    >
+                      {item.name}
+                    </Text>
+
+                    <Text
+                      style={[
+                        styles.itemCode,
+                        {
+                          color:
+                            colors.subtitle,
+                        },
+                      ]}
+                    >
+                      +
+                      {
+                        item.callingCode
+                      }
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              />
+            </SafeAreaView>
+          </Modal>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -542,7 +686,8 @@ const styles = StyleSheet.create({
 
   modalHeader: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent:
+      "space-between",
     alignItems: "center",
     paddingHorizontal: 20,
     paddingVertical: 16,
